@@ -158,16 +158,153 @@ semantic error of slide 41, and no amount of checking against the repository or 
 run's record reaches it.
 
 ## Part E · Detectors and the diff
-How your diff matches a traced call to a plan step.
 
-**The looping run.** Questions 1 to 3, each with the turns or steps that fired, and
-how you answered question 2 without `depends_on`. Question 4, in one sentence.
+**How the diff matches a traced call to a plan step.** By `plan_step` where the
+line carries one, which the executor writes on every call it makes. The recorded
+runs in `fixtures/traces/` have no `plan_step`, so there the match is by tool and by
+the arguments the plan fixes, an argument written `"$fill"` being fixed by nothing.
+One call consumes one step, and a call that matches no unconsumed step is `extra`.
 
-**Slide 51's run.** Questions 1 to 3, each with the steps that fired. Question 4, in
-one sentence. The diff's label for every step of the plan.
+That last rule is what slide 51's run turns on. Its plan has two `run_tests` steps,
+step 1 with no arguments and step 5 with `test: test_export_csv`. The first call,
+`run_tests` with no arguments, matches step 1, whose fixed arguments are empty and
+so match anything. The sixth call, `run_tests test_export_csv`, would also match
+step 1 on that reasoning, but step 1 is already consumed, so it falls through to
+step 5, whose fixed argument it satisfies exactly. Without consumption both calls
+would claim step 1 and step 5 would read as skipped, which would be the wrong
+diagnosis: the test was re-run, and it still failed.
+
+### The looping run
+
+| | Fired | What fired |
+|---|---|---|
+| q1 Did any two steps do the same thing? | yes | turns 1 and 3, and turns 2 and 4 |
+| q2 Is any step's result never used? | yes | turns 1, 2, 3, 4, 5 |
+| q3 Did every planned step execute? | yes | steps 3, 4, 5, 6 never ran |
+
+**How question 2 was answered without `depends_on`.** This plan records no
+dependencies at all, so the dependency graph cannot answer it and the trace has to.
+The rule in code: a call's result counts as used when a later call's arguments name
+a path that call returned. The looping run was transcribed without paths, its
+results being `247 results` and `1,400 lines`, so there is nothing recorded for a
+later call to name, and no use can be demonstrated for any call. Every call but the
+last is reported unused.
+
+That is the honest reading rather than a satisfying one, and the gap is the finding.
+A person looking at turns 5 and 6, `search("exportButton")` then
+`read(ExportButton.tsx)`, would say plainly that the search fed the read. The only
+reason to think so is that the path resembles the query. The trace does not record
+that the search returned that path, so the detector cannot know it, and a detector
+that guessed from resemblance would also "find" that turn 1's search for `export`
+fed turn 5's search for `exportButton`, which is circling, not progress.
+
+**Question 4: did the plan match the task?** No. The task was to find out why one
+button does not work, and the plan commits to fixing it and opening a pull request
+before anything has been read, so steps 3 to 6 are written as though the cause were
+already known.
+
+### Slide 51's run
+
+| | Fired | What fired |
+|---|---|---|
+| q1 Did any two steps do the same thing? | yes | turns 2 and 4, the identical search |
+| q2 Is any step's result never used? | no | every step but the last is in a later `depends_on` |
+| q3 Did every planned step execute? | yes | step 6, "confirm the button works" |
+
+The diff: steps 1 to 5 `executed`, step 6 `skipped`, and one `extra` call, turn 4.
+
+**Question 4: did the plan match the task?** Yes, and that is what makes the run
+worth reading: a sound plan still ended in a false report, because the agent stopped
+at step 5 and reported success while `test_export_csv` was still failing.
+
+**What the ladder is actually doing here.** Three of these four detectors fall out
+of things built for other reasons: the schema gave the step ids, `depends_on` gave
+the graph, and `status` gave the record of what ran. None of them is clever. The
+cleverness was in having recorded the plan at all, which is the whole argument for
+making it data (slide 53).
+
+**Treating repetition as the defect.** In the looping run the repeat is the symptom.
+The defect is step 3, "Identify the bug": a step with no tool and no expected
+result, which the validator rejects on check 3 before the run ever starts. Because
+nothing can observe whether that step succeeded, the agent has no way to tell
+whether it has made progress, so it goes back and searches again. Slide 44's
+question, does the agent have any representation of its own progress, is answered
+by the plan's own shape, and the answer is no.
 
 ## Part F · What the plan and the second pass bought
+
 Three sweeps a configuration: a pilot, not a settled difference.
+
+### Predictions, written 2026-10-16, before any evaluation run
+
+Recorded before `make reset` and before the first measured run, so that the numbers
+below can disagree with them. Development was on 4191 and 4192 only, where the
+planned way passed 5 of 6 and Assignment 1's agent 2 of 6; neither issue is in the
+measured set, so these are reasoning from the issue text and the fixtures, not from
+evidence.
+
+**Per issue.**
+
+- **4201**, the reset link pointing at localhost. The responsible file is the one
+  that builds the URL, not the one that handles the reset, and a reporter describing
+  a password reset pulls a search towards authentication. I expect this to pass
+  sometimes and to fail by naming the auth path.
+- **4202**, a request for TSV export. Two risks, and they are independent: the label
+  has to be `feature` rather than `bug`, and the repository has both an
+  `src/export/` directory and a single top-level export helper, so a search for
+  `csv` returns the wrong one first. I expect this to fail more often than it passes.
+- **4203**, "Malformed row". The one issue the checkpoint was built for: the error
+  message matches exactly one line in the repository and it is a translation file.
+  The checkpoint will fire on nearly every run. Whether the revision then finds the
+  parser is the open question, and in development the second search went to
+  documentation instead. I expect it to fail more often than it passes, with a
+  revision in almost every run.
+- **4204**, the Monday email arriving on Tuesday. The words in the issue are the
+  reporter's, not the code's, and nothing in it names anything a literal search will
+  match. I expect searches to return nothing or only documentation, the retries and
+  the revision to be spent, and a high share of runs to end `escalated` with no
+  comment. This is the issue where the planned way should post least often.
+- **4205**, the security team's question. The answer is `question` with `file: none`,
+  and nothing needs to be found at all. **I expect the plan to hurt here.** Every
+  plan the planner writes contains a search and a read, because it is written before
+  the issue is known and cannot tell that this issue needs neither. A search that
+  finds no source file fires the checkpoint, a read with no path to read fails, and
+  the run escalates with nothing posted, while the agent can simply stop and answer.
+  This is slide 52's first case in the measured set: a task of one step, given a plan
+  of four.
+- **4206**, the misattributed currency bug. The issue names `src/export/csv.ts` in
+  its title and its first line, and that file exists. The answer is the deduplication
+  key, which drops a row before the writer ever sees it. I expect **every
+  configuration to fail this one**, and I expect `external` to fail it too, because
+  the file the draft names exists, the run will have read it, and `bug` with a file
+  is consistent. All four checks pass on the wrong answer.
+
+**Per configuration, passes out of 18.** I expect all four to land between 4 and 9,
+with the differences inside sweep-to-sweep noise rather than above it: `agent`
+around 7, `planned_off` around 6, `planned_self` around 6, `planned_external`
+around 7. I do not expect the plan to buy accuracy. I expect it to cost some, on
+4205 and 4204, by insisting on steps those issues do not need, and to buy back a
+little on issues where a wrong path would otherwise be posted.
+
+**The second pass.** `external` should change a small number of drafts, two to four
+across its 18 runs, almost all of them paths that do not exist or that the run never
+saw. `self` should change almost nothing: its prompt tells it to prefer accepting,
+and it knows nothing the author did not. I expect `drafts_fixed` to be larger than
+`drafts_broken` for `external`, and both to be near zero for `self`. I expect at
+least one draft held at the bound in `external`, on 4204 or 4205.
+
+**Cost.** Development put the planned run at about 7,400 tokens and the agent at
+about 9,100, so I expect the plan to be **cheaper** than the baseline, not dearer,
+because it replaces the agent's long tail of searching with one planning call. Plan
+overhead should be 15 to 25 per cent of prompt tokens, and should fall as a share
+on runs that take more steps. `critique_overhead_share` should be clearly higher for
+`self` than for `external`, because `external`'s check is code and costs nothing
+unless it fails.
+
+**Off-plan attempts and repeats.** I expect `off_plan` to be 0 across all 54 planned
+runs: the executor offers one tool per call, and a model offered one tool rarely
+asks for another. I expect few runs with an exact repeat, because a retried step is
+shown what it already tried.
 
 | Measure | Agent | Planned, off | Planned, self | Planned, external |
 |---|---|---|---|---|

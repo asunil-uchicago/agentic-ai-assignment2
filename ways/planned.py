@@ -141,10 +141,15 @@ class PlannedRun:
         """
         problems = errors(without_meta(plan), self.schema)
         if not problems:
-            steps = plan.get("steps") or []
-            last = steps[-1].get("tool") if steps and isinstance(steps[-1], dict) else None
+            steps = [s for s in (plan.get("steps") or []) if isinstance(s, dict)]
+            last = steps[-1].get("tool") if steps else None
+            posts = sum(1 for s in steps if s.get("tool") == "post_comment")
             if last != "post_comment":
                 problems = [f"the plan's last step is {last!r}, and a plan must end with post_comment"]
+            elif posts > 1:
+                # A run decides once. Two posting steps would put two comments on one
+                # issue, which the grounded check reads as no decision at all.
+                problems = [f"the plan posts {posts} comments, and a run posts one"]
         if problems:
             self.ctx.trace.event("schema", errors=problems, version=version)
             return False
@@ -295,6 +300,10 @@ class PlannedRun:
         step_id = str(step.get("id"))
         blanks = [k for k, v in args.items() if v == FILL]
         given = dict(args)
+        # Posting is never retried. The second pass runs once per draft, and a retry
+        # would run it again and write more critique lines than MAX_ROUNDS allows;
+        # a post that the tracker refused is a failed step, for a person to look at.
+        may_retry = bool(blanks) and step.get("tool") != "post_comment"
 
         while True:
             if blanks:
@@ -319,7 +328,7 @@ class PlannedRun:
                 # wanted. The step, its tool and its place in the plan do not change.
                 self.attempts.setdefault(step_id, []).append(
                     {"args": args, "outcome": f"an error: {result.content[:140]}"})
-                if blanks and self.retries.get(step_id, 0) < MAX_STEP_RETRIES:
+                if may_retry and self.retries.get(step_id, 0) < MAX_STEP_RETRIES:
                     self.retries[step_id] = self.retries.get(step_id, 0) + 1
                     continue
                 self.record(step, args, "failed", result.content, True, "tool_error")
@@ -343,7 +352,7 @@ class PlannedRun:
             # order and their tools are exactly as the plan wrote them. Only when the
             # retries are spent does this become a failed step for the checkpoint to
             # repair (Lecture 2, slide 15).
-            if blanks and self.retries.get(step_id, 0) < MAX_STEP_RETRIES:
+            if may_retry and self.retries.get(step_id, 0) < MAX_STEP_RETRIES:
                 self.retries[step_id] = self.retries.get(step_id, 0) + 1
                 continue
             self.record(step, args, "failed", result.content, error_code="no_matches")

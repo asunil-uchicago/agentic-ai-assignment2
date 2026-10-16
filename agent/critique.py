@@ -113,7 +113,8 @@ def verify(draft: str, ctx) -> dict:
     # 2. A path it names exists in the repository. A draft naming none skips this.
     exists = True
     if names_file:
-        target = ROOT / "fixtures" / "repo" / normalize_path(file)
+        root = Path(getattr(ctx, "root", ROOT) or ROOT)
+        target = root / "fixtures" / "repo" / normalize_path(file)
         exists = target.is_file()
         if not exists:
             reasons.append(f"no file named {file} exists in the repository")
