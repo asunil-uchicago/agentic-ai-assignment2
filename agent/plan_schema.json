@@ -1,0 +1,50 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["steps"],
+  "properties": {
+    "steps": {
+      "type": "array",
+      "description": "The steps, in the order they run. The last step must be post_comment.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "action", "tool", "args_json", "depends_on", "expected_result", "status"],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Unique within the plan. Number the steps 1, 2, 3, ... in the order they run."
+          },
+          "action": {
+            "type": "string",
+            "description": "What this step does, in a few words, for a person reading the plan."
+          },
+          "tool": {
+            "type": ["string", "null"],
+            "description": "The one tool this step calls, by name. Never null: a step with no tool has no outcome anything can check, and the validator rejects the plan."
+          },
+          "args_json": {
+            "type": "string",
+            "description": "This step's arguments for that tool, as a JSON object encoded in a string, for example \"{\\\"query\\\": \\\"$fill\\\"}\". An argument whose value depends on what an earlier step finds is the string \"$fill\", which the executor fills in at run time. Any other value is fixed by the plan."
+          },
+          "depends_on": {
+            "type": "array",
+            "description": "The ids of the steps whose results this step uses. Every id must belong to an earlier step. An empty list means this step depends on nothing, which is also how a plan says two steps are independent.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "expected_result": {
+            "type": ["string", "null"],
+            "description": "What this step returns when it worked, so that a check can tell whether it did. Never null, for the same reason as tool."
+          },
+          "status": {
+            "type": "string",
+            "description": "Always \"pending\" in a plan you write. The executor sets it as each step runs.",
+            "enum": ["pending", "done", "failed"]
+          }
+        }
+      }
+    }
+  }
+}

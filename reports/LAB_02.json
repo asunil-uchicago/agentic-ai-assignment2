@@ -1,10 +1,10 @@
 {
   "lab": "02",
   "schema": {
-    "args_representation": null,
-    "optional_fields": null,
-    "union_types": null,
-    "strict_compiles": null
+    "args_representation": "args_json",
+    "optional_fields": 0,
+    "union_types": 2,
+    "strict_compiles": true
   },
   "fixture_validation": [
     {

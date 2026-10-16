@@ -6,10 +6,35 @@ number its run count. Mark any vendor figure you cite with its source and the da
 you read it.
 
 ## Part A · The plan artifact
-Your `args` choice, `args_json` or one shape per tool with `oneOf`, and why, in two
-sentences. Your strict-mode count, in two sentences: optional fields and union
-types against the budgets of 24 and 16, and whether a strict request carrying the
-schema was accepted (or that your vendor has no strict mode).
+
+**The `args` choice: `args_json`.** RepoMind's four tools take four different
+argument shapes, and strict mode rejects a free-form object, so the choice was
+between one JSON-encoded string and a `oneOf` branch per tool. I took `args_json`
+because the union budget is the scarce resource here and `oneOf` would have spent
+four of it on information the executor can get for free: it already knows which tool
+a step names, so it can check the decoded arguments against that tool's own
+`input_schema` before calling. The cost is one `json.loads` in the executor and
+arguments that a human reading the plan sees escaped.
+
+**The strict-mode count: 0 optional fields and 2 union types, against budgets of 24
+and 16.** Every one of the step object's seven properties is listed in `required`
+and both objects carry `additionalProperties: false`, so nothing is optional; the
+two unions are `tool` and `expected_result`, written `["string", "null"]` because
+the schema has to be able to express the plans the validator must reject (a step
+with no tool, or no expected result) while still compiling. The schema is 8 object
+properties and 5 levels deep, against limits of 5,000 and 10. A strict request
+carrying it was **accepted**: `gpt-4o-mini-2024-07-18` returned a four-step plan
+through the `submit_plan` tool with `"strict": true` set, and the returned plan
+passed `harness.schema.errors` against the file.
+
+**One thing strict mode did not buy.** Acceptance is not enforcement of the
+*convention*, only of the *shape*. The planner repeatedly returned a comment body of
+`"label: $fill\nfile: $fill"`, a template rather than a blank, which section 10.1
+defines as a value "fixed by the plan" and which the executor would therefore have
+posted word for word. Two rounds of prompting, including the wrong form shown
+explicitly, did not stop it. It is enforced in code instead, in
+`agent/plan.py:_normalize_fills`, which is the point `prompts/README.md` makes: a
+sentence in a prompt is a request, not a control.
 
 ## Part B · The validator and the boundary
 
