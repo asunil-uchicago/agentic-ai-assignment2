@@ -95,10 +95,67 @@ seven times inside its step budget. Keeping retries separate from revisions is w
 lets the revision bound stay at 2 while the run still gets a fair number of searches.
 
 ## Part D · A second pass before posting
-Your four external checks, one line each, and your bound, `MAX_ROUNDS`, in one
-line. For each mode, `off`, `self` and `external`, which of slide 41's three gates
-it passes: can a check find the error, does the critic know more than the agent,
-is there a limit and a log?
+
+**The four external checks** in `agent/critique.py`, in order:
+
+1. **It parses.** The first two lines are `label:` and `file:`, the label is one of
+   the four, and the file is a path or `none`.
+2. **The path exists** under `fixtures/repo`. A draft naming `none` skips this.
+3. **This run saw the path.** It appears in the `paths` of one of this run's own
+   `tool_call` lines, read back off the trace. Not that the file is plausible: that
+   a search returned it or a read read it.
+4. **The label and the file agree.** A `question` names `none`; every other label
+   names a file. Without this check a failing draft could pass by changing the file
+   to `none` rather than by finding the right one.
+
+**`MAX_ROUNDS = 2`:** check, rewrite once if the check fails, check again, then post
+or hold. One round would be a gate with no repair, and would make the cost of a
+second pass pure overhead on every run that fails it; a third round never changed a
+draft in development, because the rewriter is given the same reason it was given the
+first time.
+
+### Slide 41's three gates, by mode
+
+| | Can a check find the error? | Does the critic know more? | Is there a limit and a log? |
+|---|---|---|---|
+| `off` | no check runs | no critic | nothing to bound |
+| `self` | only what one reading can notice | **no**: it is shown the issue and the step results, which is exactly what the author had | yes: `MAX_ROUNDS`, and a `critique` line a round |
+| `external` | **yes**, for four named faults, in code | **yes**: it knows what is on disk and what this run actually saw | yes: the same bound and the same line |
+
+So `external` is the only mode that passes all three, and it is the only one that is
+verification rather than critique (slide 34). It is also the cheaper of the two: its
+check is code, so a passing draft costs **no model call at all**, while `self` costs
+one every run whatever it concludes.
+
+### What the checks actually catch
+
+Run against eight drafts, holding this run's own trace as the record of what it saw:
+
+| Draft | Verdict |
+|---|---|
+| a path the run saw | pass |
+| `ExportButton.js`, the extension invented | fail, check 2 |
+| a real file the run never opened | fail, check 3 |
+| a bare filename, directories stripped | fail, check 2 |
+| `bug` with `file: none` | fail, check 4 |
+| `question` naming a file | fail, check 4 |
+| an unknown label | fail, check 1 |
+| no `file:` line | fail, check 1 |
+
+The second of those is not hypothetical: a Part C development run posted
+`src/components/ExportButton.js` for a file that is `.tsx`, with the directory
+right and the extension invented. That is the kind of fault a check in code is for,
+and the kind a model rereading its own draft has no way to notice.
+
+### What neither mode can catch
+
+A development run on 4191 drafted `label: question` with `file: none`, and
+`external` **passed it**, correctly: a question that names no file is consistent,
+nothing in the repository contradicts it, and the run genuinely did not need to see
+a file to write it. The answer is `docs` with `README.md`. Both checks are satisfied
+by a draft that is simply wrong about what kind of issue it is reading. That is the
+semantic error of slide 41, and no amount of checking against the repository or the
+run's record reaches it.
 
 ## Part E · Detectors and the diff
 How your diff matches a traced call to a plan step.

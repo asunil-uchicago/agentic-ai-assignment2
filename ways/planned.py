@@ -66,6 +66,7 @@ from __future__ import annotations
 
 import json
 
+from agent.critique import self_critique, verify
 from agent.plan import load_schema, make_plan, revise_plan, without_meta
 from agent.validator import validate
 from harness.formats import FILL, result_paths
@@ -76,6 +77,7 @@ MAX_REVISIONS = 2      # Part C: revisions a run, accepted and rejected alike
 MAX_ROUNDS = 2         # Part D: second-pass rounds a run, the same in both modes
 
 EXECUTOR_PROMPT = "executor.md"
+REWRITE_PROMPT = "rewrite.md"
 
 # A step that has run cannot be picked up again, so the executor always moves forward.
 # This only guards against a plan that somehow leaves a step pending for ever.
@@ -361,9 +363,70 @@ class PlannedRun:
     def finish(self) -> None:
         """Part G compacts and asks its questions here, however the run ended."""
 
+    # -- Part D: a second pass before posting ----------------------------------------
+    def evidence(self) -> dict:
+        """What the self critique is shown: exactly what the draft's author had."""
+        return {
+            "issue": self.issue_text,
+            "paths_this_run_saw": self.seen_paths(),
+            "steps": [{k: v for k, v in r.items() if k != "args"} for r in self.results],
+        }
+
+    def rewrite(self, draft: str, reason: str) -> str:
+        """One model call that rewrites a failed draft, given the reason it failed."""
+        self.step += 1
+        response = self.ctx.client.create(
+            system=self.ctx.prompt(REWRITE_PROMPT),
+            messages=[{"role": "user", "content": "\n\n".join([
+                f"The draft comment:\n\n{draft}",
+                f"The check it failed:\n\n{reason}",
+                "Every path this run has actually seen:\n"
+                + "\n".join(f"- {p}" for p in self.seen_paths() or ["(none)"]),
+                "Rewrite the comment so it passes. Answer with the comment alone.",
+            ])}],
+            tools=None,
+        )
+        self.ctx.trace.model_call(self.step, response, purpose="critique")
+        return (response.text or "").strip() or draft
+
+    def round_result(self, draft: str) -> tuple[str, str | None]:
+        """One round's verdict on a draft: pass, or fail with a reason."""
+        if self.ctx.critique == "external":
+            verdict = verify(draft, self.ctx)          # code only, no model call
+            if verdict["passed"]:
+                return "pass", None
+            return "fail", "; ".join(verdict["reasons"])
+        verdict = self_critique(self.ctx.client, draft, self.evidence(), trace=self.ctx.trace)
+        if verdict.get("decision") == "revise":
+            return "fail", verdict.get("reason")
+        return "pass", None
+
     def second_pass(self, draft: str):
-        """Part D reads the draft here. None holds it, and the run escalates."""
-        return draft
+        """Read the draft before it is posted, in the mode --critique names.
+
+        Bounded and logged, which is the third of slide 41's gates. A draft that
+        passes is posted; a draft still failing in the last round is held, nothing is
+        posted, and the run escalates. Returns the text to post, or None to hold.
+        """
+        if self.ctx.critique == "off":
+            return draft
+
+        for round_number in range(1, MAX_ROUNDS + 1):
+            result, reason = self.round_result(draft)
+            # A failing draft gets one rewrite while a round remains. The rewrite
+            # happens before the line is written, so "changed" records what it did.
+            rewritten, changed = draft, False
+            if result == "fail" and round_number < MAX_ROUNDS:
+                rewritten = self.rewrite(draft, reason or "the check failed")
+                changed = rewritten != draft
+            self.ctx.trace.event("critique", round=round_number, mode=self.ctx.critique,
+                                 result=result, reason=reason, changed=changed, draft=draft)
+            if result == "pass":
+                return draft
+            if round_number == MAX_ROUNDS:
+                return None                # held: not posted, and the run escalates
+            draft = rewritten
+        return None
 
     # -- Part C: one checkpoint, after a search -------------------------------------
     @staticmethod
