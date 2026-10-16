@@ -67,7 +67,32 @@ call to reach the same escalation.
 measured over Part F's runs and is reported with them.)*
 
 ## Part C · Revision at a checkpoint
-The checkpoint's check, in one sentence, and your revision bound, `MAX_REVISIONS`.
+
+**The check:** after a search step, the search must have returned at least one
+source file, a `.ts` or `.tsx` under `src/` that is not a translation, and if it
+returned only documentation, translations or nothing at all, the plan is revised.
+
+**`MAX_REVISIONS = 2`.** The plan has one search step, so two revisions give the run
+three chances to find source code, and a third revision has never changed the answer
+in development: by then the issue's distinctive words are used up and the reviser,
+which cannot see the issue, has nothing new to say. Keeping it at 2 also keeps
+revisions well below the step count, which is the sign that a checkpoint is tight
+rather than a tool loop wearing a plan.
+
+Issue 4203 is what the checkpoint is for. The obvious search, the error message
+`Malformed row`, returns exactly one hit, and it is `src/i18n/en.json`: the run has
+found where the message is written, not the code that produces it. The check fails,
+the plan goes to version 2 with the search step rewritten, and the executor searches
+again. The `revision` line sits directly after that search's `tool_call` line, which
+is how the trace shows where adaptation was allowed to happen.
+
+**Retrying is not revising.** The executor may also retry a step up to
+`MAX_STEP_RETRIES = 2` times when a search matches nothing at all or a tool refuses
+the arguments, and that is not a revision: the plan's steps, their order and their
+tools are untouched, only the arguments change. This matters because without it the
+planned way was strictly worse than Assignment 1's agent, which can search six or
+seven times inside its step budget. Keeping retries separate from revisions is what
+lets the revision bound stay at 2 while the run still gets a fair number of searches.
 
 ## Part D · A second pass before posting
 Your four external checks, one line each, and your bound, `MAX_ROUNDS`, in one

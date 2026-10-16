@@ -46,7 +46,15 @@ ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = ROOT / "agent" / "plan_schema.json"
 
 PLANNER_PROMPT = "prompts/planner.md"
+REVISER_PROMPT = "prompts/reviser.md"
 PLAN_TOOL = "submit_plan"
+
+# What a reviser is allowed to see of a step. Never args_json: the executor fills a
+# search term in from the issue's text, so arguments are untrusted text in disguise.
+REVISABLE_FIELDS = ("id", "action", "tool", "depends_on", "expected_result", "status")
+
+# What a reviser is allowed to see of a step result (section 10.3, less its args).
+RESULT_FIELDS = ("id", "tool", "status", "count", "paths", "error_code")
 
 # Whether the plan tool goes out marked "strict": true. OpenAI and Anthropic both have
 # a strict mode, and the harness passes the flag through to the vendor
@@ -157,5 +165,95 @@ def make_plan(client, issue_number: int, tool_schemas: list[dict], trace=None) -
     return _read_plan(response, meta)
 
 
+def _pick(source: dict, fields) -> dict:
+    return {f: source.get(f) for f in fields if f in source}
+
+
+def _redacted(plan: dict, step_results: list[dict]) -> tuple[list[dict], list[dict]]:
+    """The plan and its results with every value that could carry issue text removed.
+
+    Two things are stripped. A step's args_json, because the executor fills a search
+    term into it from the issue, and a step result's args, for the same reason
+    (section 10.3 says so in as many words). What is left is structure and outcomes:
+    ids, tools, actions the planner wrote before it had read anything, statuses,
+    counts, repository paths and error codes.
+    """
+    steps = [_pick(s, REVISABLE_FIELDS) for s in (plan.get("steps") or []) if isinstance(s, dict)]
+    results = [_pick(r, RESULT_FIELDS) for r in (step_results or []) if isinstance(r, dict)]
+    return steps, results
+
+
+def _merge(old: dict, new: dict) -> list[dict]:
+    """The revised steps, with every finished step put back as it was.
+
+    Repair before replace. A step whose status is done comes back unchanged in every
+    field but status, whatever the model wrote, and is restored to its old place if
+    the model dropped it. A step that failed may be changed, and a change puts it
+    back to pending so the executor runs it again; a failed step the model left alone
+    stays failed, and the run stops on it.
+
+    A step's args_json is carried over from the old plan whenever the tool is
+    unchanged, because the reviser was never shown the arguments and so cannot write
+    them back. Only a step whose tool actually changed takes the model's arguments.
+    """
+    old_steps = [s for s in (old.get("steps") or []) if isinstance(s, dict)]
+    by_id = {str(s.get("id")): s for s in old_steps}
+    merged: list[dict] = []
+
+    for step in (new.get("steps") or []):
+        if not isinstance(step, dict):
+            continue
+        was = by_id.get(str(step.get("id")))
+        if was is None:
+            merged.append(step)                       # a step the revision added
+            continue
+        if was.get("status") == "done":
+            merged.append(dict(was))                  # finished: unchanged, whatever was written
+            continue
+        kept = dict(step)
+        if step.get("tool") == was.get("tool") and "args_json" in was:
+            kept["args_json"] = was["args_json"]
+        changed = any(kept.get(f) != was.get(f) for f in REVISABLE_FIELDS if f != "status")
+        if was.get("status") == "failed":
+            kept["status"] = "pending" if changed else "failed"
+        else:
+            kept["status"] = was.get("status", "pending")
+        merged.append(kept)
+
+    # A finished step the revision dropped goes back where it was.
+    present = {str(s.get("id")) for s in merged}
+    for index, step in enumerate(old_steps):
+        if step.get("status") == "done" and str(step.get("id")) not in present:
+            merged.insert(min(index, len(merged)), dict(step))
+    return merged
+
+
 def revise_plan(client, plan: dict, step_results: list[dict], trace=None) -> dict:
-    raise NotImplementedError("Assignment 2 Part C: the reviser")
+    """Repair the active plan from what its steps returned (Lecture 2, slide 16).
+
+    The request carries structured results only: no issue text, and no argument the
+    executor filled in from the issue. Reading the issue here would plan better, and
+    would let text a stranger wrote reshape the plan rather than merely fill it in.
+    """
+    steps, results = _redacted(plan, step_results)
+    system = (ROOT / REVISER_PROMPT).read_text(encoding="utf-8")
+    messages = [{
+        "role": "user",
+        "content": (
+            "The plan so far, with its arguments withheld:\n\n"
+            f"{json.dumps(steps, indent=1)}\n\n"
+            "What each step that has run returned:\n\n"
+            f"{json.dumps(results, indent=1)}\n\n"
+            "Repair the plan. Leave every step whose status is done exactly as it is."
+        ),
+    }]
+    response = client.create(system=system, messages=messages, tools=[plan_tool_definition()])
+    if trace is not None:
+        trace.model_call(0, response, purpose="revise")
+
+    meta = dict(plan.get("meta") or {})
+    meta["model"] = response.model
+    meta["prompt"] = REVISER_PROMPT
+    revised = _read_plan(response, meta)
+    revised["steps"] = _merge(plan, revised)
+    return revised

@@ -66,7 +66,7 @@ from __future__ import annotations
 
 import json
 
-from agent.plan import load_schema, make_plan, without_meta
+from agent.plan import load_schema, make_plan, revise_plan, without_meta
 from agent.validator import validate
 from harness.formats import FILL, result_paths
 from harness.schema import errors
@@ -80,6 +80,11 @@ EXECUTOR_PROMPT = "executor.md"
 # A step that has run cannot be picked up again, so the executor always moves forward.
 # This only guards against a plan that somehow leaves a step pending for ever.
 MAX_STEP_RUNS = 32
+
+# How many times the executor may retry one step with different arguments before the
+# step is failed. Retrying a step is the executor's to do and is not a revision: the
+# plan's steps, their order and their tools are untouched (Lecture 2, slide 15).
+MAX_STEP_RETRIES = 2
 
 
 def _result_count(tool: str, content: str, is_error: bool):
@@ -112,6 +117,9 @@ class PlannedRun:
         self.results: list[dict] = []        # step_results, checks/FORMATS.md section 10.3
         self.outputs: dict[str, str] = {}    # what each step returned, for the next call
         self.issue_text: str | None = None
+        self.checkpoints: set[str] = set()   # ids of search steps the check runs after
+        self.attempts: dict[str, list[dict]] = {}   # what each step has already tried
+        self.retries: dict[str, int] = {}           # retries spent on each step
         self._ended = False
 
     # -- endings ---------------------------------------------------------------------
@@ -173,11 +181,42 @@ class PlannedRun:
             returned = self.outputs.get(str(dep))
             if returned is not None:
                 parts.append(f"What step {dep} returned:\n\n{returned}")
+        # What this step has already tried. Without it a retried step picks the same
+        # obvious argument again and the run circles: the agent has no
+        # representation of its own progress (Lecture 2, slide 44). These are the
+        # run's own record, not anything new from outside it.
+        # The comment names a file, and a model recalling a path from the middle of a
+        # file's text invents its extension. These are the paths this run's own tool
+        # calls returned, which is exactly what Part D's external check will hold the
+        # draft against, so the author and the checker read the same list.
+        if step.get("tool") == "post_comment":
+            seen = self.seen_paths()
+            if seen:
+                parts.append("Every path this run has actually seen, exactly as the tools "
+                             "returned them:\n" + "\n".join(f"- {p}" for p in seen) +
+                             "\nName one of these, character for character, or none.")
+
+        tried = self.attempts.get(str(step.get("id")))
+        if tried:
+            lines = "\n".join(f"- {json.dumps(t['args'])} returned {t['outcome']}" for t in tried)
+            parts.append(
+                f"This step has already been tried, and did not work:\n{lines}\n"
+                "Choose different arguments. Repeating any of those wastes the step."
+            )
         parts.append(
             f"Step {step.get('id')} of the plan: {step.get('action')}\n"
             f"Call {step.get('tool')} once. Supply only: {', '.join(blanks)}."
         )
         return [{"role": "user", "content": "\n\n".join(parts)}]
+
+    def seen_paths(self) -> list[str]:
+        """Every path this run's tool calls returned, oldest first, without repeats."""
+        out: list[str] = []
+        for entry in self.results:
+            for path in entry.get("paths") or []:
+                if path not in out:
+                    out.append(path)
+        return out
 
     # -- running one step ------------------------------------------------------------
     def tool_schema(self, name) -> dict | None:
@@ -251,38 +290,66 @@ class PlannedRun:
             self.record(step, None, "failed", error_code="bad_args_json")
             return
 
+        step_id = str(step.get("id"))
         blanks = [k for k, v in args.items() if v == FILL]
-        if blanks:
-            args, problem = self.fill(step, args, blanks)
-            if problem:
-                self.record(step, None, "failed", error_code=problem)
+        given = dict(args)
+
+        while True:
+            if blanks:
+                args, problem = self.fill(step, given, blanks)
+                if problem:
+                    self.record(step, None, "failed", error_code=problem)
+                    return
+
+            if step.get("tool") == "post_comment":
+                final = self.second_pass(str(args.get("body") or ""))
+                if final is None:
+                    self.record(step, args, "failed", error_code="draft_held")
+                    self.end("escalated",
+                             "the draft still failed its last round, so nothing was posted")
+                    return
+                args = {**args, "body": final}
+
+            result = self.ctx.call_tool(self.step, step.get("tool"), args, plan_step=step_id)
+            if result.is_error:
+                # A tool that refused the arguments is the other thing a retry can
+                # fix: a path that does not exist, or a directory where a file was
+                # wanted. The step, its tool and its place in the plan do not change.
+                self.attempts.setdefault(step_id, []).append(
+                    {"args": args, "outcome": f"an error: {result.content[:140]}"})
+                if blanks and self.retries.get(step_id, 0) < MAX_STEP_RETRIES:
+                    self.retries[step_id] = self.retries.get(step_id, 0) + 1
+                    continue
+                self.record(step, args, "failed", result.content, True, "tool_error")
                 return
 
-        if step.get("tool") == "post_comment":
-            final = self.second_pass(str(args.get("body") or ""))
-            if final is None:
-                self.record(step, args, "failed", error_code="draft_held")
-                self.end("escalated", "the draft still failed its last round, so nothing was posted")
-                return
-            args = {**args, "body": final}
+            count = _result_count(step.get("tool"), result.content, False)
+            if step.get("tool") != "search_repo":
+                break
 
-        result = self.ctx.call_tool(self.step, step.get("tool"), args, plan_step=step.get("id"))
-        if result.is_error:
-            self.record(step, args, "failed", result.content, True, "tool_error")
-            return
+            # Remember what this search tried, so a retry does not repeat it.
+            paths = result_paths("search_repo", args, result.content, False)
+            self.attempts.setdefault(step_id, []).append({
+                "args": args,
+                "outcome": f"{count} result(s)" + (f", in {sorted(set(paths))}" if paths else ", no files"),
+            })
+            if count:
+                break
 
-        # A search that found nothing ran without failing, and still did not return
-        # what the step was for. It is a failed step, so that the checkpoint can
-        # rewrite it and the executor can retry; with no revision left, the run
-        # escalates rather than reading a file no search pointed at.
-        count = _result_count(step.get("tool"), result.content, False)
-        if step.get("tool") == "search_repo" and not count:
+            # A search that matched nothing at all. Retrying the step with other
+            # arguments is the executor's to do and changes no plan: the steps, their
+            # order and their tools are exactly as the plan wrote them. Only when the
+            # retries are spent does this become a failed step for the checkpoint to
+            # repair (Lecture 2, slide 15).
+            if blanks and self.retries.get(step_id, 0) < MAX_STEP_RETRIES:
+                self.retries[step_id] = self.retries.get(step_id, 0) + 1
+                continue
             self.record(step, args, "failed", result.content, error_code="no_matches")
-            self.outputs[str(step.get("id"))] = result.content
+            self.outputs[step_id] = result.content
             return
 
         entry = self.record(step, args, "done", result.content)
-        self.outputs[str(step.get("id"))] = result.content
+        self.outputs[step_id] = result.content
         if step.get("tool") == "read_issue":
             self.issue_text = result.content
         self.after_step(step, entry)
@@ -298,8 +365,82 @@ class PlannedRun:
         """Part D reads the draft here. None holds it, and the run escalates."""
         return draft
 
+    # -- Part C: one checkpoint, after a search -------------------------------------
+    @staticmethod
+    def found_source(paths) -> bool:
+        """The checkpoint's check, in code rather than in a prompt.
+
+        The search returned at least one source file: a .ts or .tsx file under src/,
+        not counting translations. Asking only "did the search return anything" would
+        almost never fire, because almost every term matches something;
+        search_repo returns at most 20 hits in path order, so CHANGELOG.md, README.md
+        and docs/ come first and a vague term fills the list with them before it
+        reaches any code.
+        """
+        for path in paths or []:
+            if path.startswith("src/") and path.endswith((".ts", ".tsx")) \
+                    and not path.startswith("src/i18n/"):
+                return True
+        return False
+
+    def searches_changed(self, before: dict, after: dict) -> set:
+        """Ids of search steps a revision added or changed: the next checkpoints."""
+        was = {str(s.get("id")): s for s in before.get("steps") or [] if isinstance(s, dict)}
+        out = set()
+        for step in after.get("steps") or []:
+            if not isinstance(step, dict) or step.get("tool") != "search_repo":
+                continue
+            old = was.get(str(step.get("id")))
+            if old is None or old.get("action") != step.get("action"):
+                out.add(str(step.get("id")))
+        return out
+
     def checkpoint(self, step: dict) -> None:
-        """Part C revises here, after a search step whose check failed."""
+        """Revise the plan here and nowhere else (Lecture 2, slide 16).
+
+        Only after a search step that is a checkpoint, only when the check there
+        fails, and only while a revision is left. Everything between this and the
+        search's tool call is a model call, so the revision line lands directly after
+        the search in the trace, which is how the checkpoint can be read back.
+        """
+        step_id = str(step.get("id"))
+        if step.get("tool") != "search_repo" or step_id not in self.checkpoints:
+            return
+        if self.revisions >= MAX_REVISIONS:
+            return
+        found = next((r for r in reversed(self.results) if str(r.get("id")) == step_id), None)
+        paths = (found or {}).get("paths") or []
+        if self.found_source(paths):
+            return                      # the search did its job; nothing to repair
+
+        if self.revisions >= MAX_REVISIONS:
+            # Out of revisions. Go on with whatever the search did return; a search
+            # that returned nothing at all leaves the step failed, and the run
+            # escalates rather than reading a file nothing pointed at.
+            if paths:
+                step["status"] = "done"
+            return
+
+        self.revisions += 1
+        self.checkpoints.discard(step_id)
+        # The check is what "worked" means for a search step, so a search it rejects
+        # is a failed step. That is also what lets the reviser rewrite it: a step
+        # marked done comes back untouched however the plan is repaired.
+        step["status"] = "failed"
+        version = self.version + 1
+        revised = revise_plan(self.ctx.client, self.plan, self.results, trace=self.ctx.trace)
+        valid = self.acceptable(revised, version)
+        self.ctx.trace.event("revision", checkpoint="after_search", version=version,
+                             valid=valid, failures=[] if valid else validate(revised)["failures"])
+        if not valid:
+            # It never runs, and it still counts against the bound. The search keeps
+            # whatever it found, so the run can still go on if it found anything.
+            step["status"] = "done" if paths else "failed"
+            return
+        self.checkpoints |= self.searches_changed(self.plan, revised)
+        self.plan = revised
+        self.version = version
+        self.ctx.trace.plan(version, revised)
 
     # -- the run ---------------------------------------------------------------------
     def execute(self) -> None:
@@ -310,9 +451,12 @@ class PlannedRun:
             self.run_step(step)
             # The checkpoint runs before the halt: a revision may put this very step
             # back to pending, and then it is retried rather than being the end of
-            # the run (Lecture 2, slide 16).
+            # the run (Lecture 2, slide 16). Read the status back off the active
+            # plan, because a revision replaces the step objects wholesale.
             self.checkpoint(step)
-            if step.get("status") == "failed":
+            current = next((s for s in self.plan["steps"]
+                            if str(s.get("id")) == str(step.get("id"))), step)
+            if current.get("status") == "failed":
                 self.end("escalated",
                          f"step {step.get('id')} could not be run, so a person should look at it")
                 return
@@ -327,6 +471,10 @@ class PlannedRun:
                 return
             self.plan = plan
             self.version = 1
+            # The checkpoint is the first search step. A revision that changes a
+            # search step adds that one too, so the check runs again after it.
+            first = next((s for s in plan["steps"] if s.get("tool") == "search_repo"), None)
+            self.checkpoints = {str(first.get("id"))} if first else set()
             self.ctx.trace.plan(1, plan)        # before the first tool call
             self.execute()
         finally:
