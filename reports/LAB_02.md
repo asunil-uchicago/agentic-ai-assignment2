@@ -40,13 +40,31 @@ sentence in a prompt is a request, not a control.
 
 | Plan | Valid | Failures (step, check) |
 |---|---|---|
-| `good_export_fix.json` | | |
-| `good_triage.json` | | |
-| `s18_specimen.json` | | |
+| `good_export_fix.json` | yes | none |
+| `good_triage.json` | yes | none |
+| `s18_specimen.json` | no | (2, 2), (3, 3), (5, 1) |
 
-Your re-plan bound, `MAX_REPLANS`, and one line on why. How many of your planner's
-plans, in your measured runs, broke the schema or did not end with `post_comment`
-(your `schema` lines), out of how many plans.
+Built by `eval/summarize_02.py`, which writes `fixture_validation` in
+`reports/LAB_02.json`; the table is that list.
+
+Slide 18's specimen fails three times, each for a different reason, and passes
+check 4. Step 2, "apply the fix from step 4", depends on a step that has not run
+yet. Step 3, "think about the likely cause", has no tool and no
+`expected_result`, so nothing it does can be observed; it fails check 3 rather
+than check 1, because a step with no tool has not named a tool wrongly, it has
+failed to be a step. Step 5 calls `export_report`, which is not in the plan's own
+tool list. Five steps is inside the bound, so the plan is the right length and
+wrong in every other way, which is the point: a length check is the cheapest of
+the four and catches the least.
+
+**`MAX_REPLANS = 2`, so a run makes at most three planner calls.** The planner is
+given the failures and re-plans, and the defects the validator catches are the
+kind a second attempt fixes. Past the third attempt a planner that is still
+writing invalid plans is not going to converge, and every further attempt spends a
+call to reach the same escalation.
+
+*(The count of plans that broke the schema or lacked a final `post_comment` is
+measured over Part F's runs and is reported with them.)*
 
 ## Part C · Revision at a checkpoint
 The checkpoint's check, in one sentence, and your revision bound, `MAX_REVISIONS`.
