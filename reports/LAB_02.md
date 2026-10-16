@@ -306,38 +306,263 @@ runs: the executor offers one tool per call, and a model offered one tool rarely
 asks for another. I expect few runs with an exact repeat, because a retried step is
 shown what it already tried.
 
+### How those predictions fared
+
+| Prediction | Outcome |
+|---|---|
+| 4206 fails in every configuration, `external` included | **right**, 0 of 3 in all four, and `external` passed the wrong file on all nine planned runs |
+| `off_plan` is 0 across all 54 planned runs | **right**, 0 |
+| `external` costs less than `self` | **right**, 0.4 per cent of prompt tokens against 8.4 |
+| Few runs with an exact repeat | **right**, 1 run, and it was the agent's |
+| 4205 is where the plan hurts | **half right**: `planned_off` lost one run to it, but `external` matched the agent at 3 of 3, and the damage came from `self`, which I had not expected to do harm at all |
+| All four between 4 and 9 of 18 | **wrong**, `planned_self` came in at 2 |
+| `self` changes almost nothing | **wrong**, and the most useful thing measured: it changed 2 drafts, broke both, and held 3 more |
+| The plan is cheaper than the agent | **wrong**, 10,189 tokens against 9,592; the planning call is not paid for by shorter searching |
+| `drafts_fixed` exceeds `drafts_broken` for `external` | **neither**, both 0; `external` changed one draft and the run still failed |
+| At least one draft held at the bound in `external` | **wrong**, 0 in `external` and 3 in `self` |
+| 4203's checkpoint fires on nearly every run | **right** on firing, wrong on hope: it fired, and all nine planned runs still failed |
+
+The three predictions about cost and about `self` were wrong in the same direction:
+I assumed a second pass that knows nothing new would be inert, and that planning
+would pay for itself by shortening the search. Neither held.
+
 | Measure | Agent | Planned, off | Planned, self | Planned, external |
 |---|---|---|---|---|
-| Passes, of 18 | | | | |
-| Per issue, 4201 to 4206, of 3 each | | | | |
-| Spread: the lowest and highest sweep, of 6 | | | | |
-| Tokens per run | | | | |
-| Latency per run: median, and slowest | | | | |
-| Plan overhead: the mean share of prompt tokens, and how it changes with run length | | | | |
-| Second-pass overhead: the mean share of prompt tokens | | | | |
-| Runs with at least one exact repeat | | | | |
-| `off_plan` lines | | | | |
-| Revisions per run: mean, and maximum | | | | |
-| Second-pass rounds per run: mean, and maximum | | | | |
-| Drafts changed; of those fixed, and broken | | | | |
-| Drafts held at the bound | | | | |
+| Passes, of 18 | 8 | 4 | 2 | 6 |
+| Per issue, 4201 to 4206, of 3 each | 3, 0, 2, 0, 3, 0 | 2, 0, 0, 0, 2, 0 | 2, 0, 0, 0, 0, 0 | 3, 0, 0, 0, 3, 0 |
+| Spread: the lowest and highest sweep, of 6 | 2 to 3 | 0 to 2 | 0 to 1 | 2 to 2 |
+| Tokens per run | 9,592 | 10,189 | 11,843 | 10,449 |
+| Latency per run: median, and slowest | 6.3 s, 11.5 s | 7.2 s, 13.8 s | 11.5 s, 14.6 s | 8.2 s, 16.4 s |
+| Plan overhead: the mean share of prompt tokens, and how it changes with run length | | 0.231 | 0.245 | 0.246 |
+| Second-pass overhead: the mean share of prompt tokens | | | 0.084 | 0.004 |
+| Runs with at least one exact repeat | 1 | 0 | 0 | 0 |
+| `off_plan` lines | | 0 | 0 | 0 |
+| Revisions per run: mean, and maximum | | 0.78, 2 | 1.06, 2 | 0.89, 2 |
+| Second-pass rounds per run: mean, and maximum | | | 0.89, 2 | 0.83, 2 |
+| Drafts changed; of those fixed, and broken | | | 2; 0 fixed, 2 broken | 1; 0 fixed, 0 broken |
+| Drafts held at the bound | | | 3 | 0 |
 
-Leave a cell empty where a measure does not apply. The script that built this
-table: its path, and the command that runs it.
+Plan overhead against run length, over all 54 planned runs, as the plan call alone
+and as plan plus revise:
 
-1. **What did the plan buy RepoMind, concretely?** Artifacts and counts, not
-   qualities.
-2. **Where did it not pay?** Slide 52's four cases, applied to your six issues. On
-   which would the plan cost more than the execution?
-3. **What did each second pass buy, and what did it cost?** Which errors each mode
-   caught, whether either turned a passing draft into a failing one, what each
-   added in tokens and time, what happened to issue 4206 under each, and which of
-   slide 41's three gates each mode passes.
-4. **Which failure did no detector catch?** Did you see a run that reported success
-   before the task was done, and how did you know?
+| Model calls | Runs | Plan call alone | Plan and revise |
+|---|---|---|---|
+| 4 | 7 | 0.211 | 0.211 |
+| 6 | 9 | 0.141 | 0.187 |
+| 8 | 11 | 0.116 | 0.334 |
+| 10 | 6 | 0.088 | 0.248 |
+
+The plan call's share falls from 21 to 9 per cent as runs lengthen, because it is one
+fixed call against a growing conversation. Revisions move the other way, so the two
+together stay near a quarter of all prompt tokens however long the run.
+
+Built by `eval/summarize_02.py`, run as `python -m eval.summarize_02`.
+
+### 1. What did the plan buy RepoMind, concretely?
+
+Artifacts and counts, over the 54 planned runs:
+
+- **103 `plan` lines in the run logs**, one version 1 per run and 49 revisions. Before
+  this assignment nothing recorded what a run intended.
+- **A validator that ran before any tool call in all 54 runs**, and rejected 3 plans
+  outright. Those 3 runs made a second planner call; no tool ran from a rejected
+  plan, in any run.
+- **Version 1 logged before the first `tool_call` line in all 54 runs**, so there is
+  exactly one place a person could have approved the run, rather than one per action.
+- **A diff of the plan against the trace for every run.** On the 4203 runs it shows
+  all four steps `executed` and two `extra` calls, which is how a reader sees the
+  executor retried a search twice without the plan changing.
+- **0 `off_plan` lines in 54 runs.** The boundary was never crossed, which is a count
+  rather than a claim.
+- **1 run with an exact repeat, and it was the agent's.** None of the 54 planned runs
+  repeated a tool call, because a retried step is shown what it already tried.
+
+And one thing the plan bought that shows up as accuracy rather than as an artifact:
+**the planned way posts.** The agent posted nothing in 7 of 18 runs, five of them
+hitting the turn limit mid-search. `planned_off` posted nothing in 3 of 18. A plan
+whose last step is `post_comment` reaches a decision or escalates; it does not run
+out of turns halfway through exploring.
+
+What the plan did **not** buy is accuracy. `agent` passed 8 of 18, `planned_off` 4.
+On 4203 the agent passed 2 of 3 and all nine planned runs failed, for a reason worth
+naming: the agent searched `Malformed row`, saw the one hit in `src/i18n/en.json`,
+then searched **`rowShape`**, the translation key visible in that result, and found
+the parser. My executor could not do that, because a step result records the paths a
+search returned and not the matching lines, so a retry never sees the key. The
+freedom to pivot on the content of a result is what the plan took away.
+
+### What this model can reach at all, from Assignment 1
+
+Three of the six issues are not reachable on this model, and that is measured rather
+than guessed. Assignment 1 ran all four of its ways over the same six issues on
+`gpt-4o-mini`, ten sweeps each, 60 runs a way:
+
+| | Assignment 1, of 60 | 4201 | 4202 | 4203 | 4204 | 4205 | 4206 |
+|---|---|---|---|---|---|---|---|
+| direct | 20 (33%) | 0 | 0 | 10 | 0 | 10 | 0 |
+| workflow | 20 (33%) | 10 | 0 | 0 | 0 | 10 | 0 |
+| agent | 20 (33%) | 10 | 0 | 0 | 0 | 10 | 0 |
+| hybrid | 20 (33%) | 10 | 0 | 0 | 0 | 10 | 0 |
+
+**4202, 4204 and 4206 scored zero in every way, in all 240 runs.** The same three
+scored zero in all 72 runs here. Against that baseline the figures in this
+assignment read differently: this agent at 8 of 18 (44%) is above Assignment 1's
+agent, helped by now having `read_file`; `planned_external` at 6 of 18 (33%) matches
+the old baseline exactly; `planned_off` at 4 (22%) is below it; and `planned_self`
+at 2 (11%) is below every way Assignment 1 measured.
+
+So the ceiling on this fixture set is two or three issues out of six, whatever is
+built on top of this model. The honest reading of the table above is not that the
+plan failed to reach the answers, but that only `planned_self` moved the number by
+more than the spread, and it moved it down.
+
+### 2. Where did it not pay?
+
+Slide 52's four cases, against these six issues:
+
+- **The task is one step.** 4205 asks whether uploaded files are kept. The answer is
+  `question` with `file: none` and there is nothing in the repository to find. Every
+  plan nonetheless contains a search and a read, because it is written before the
+  issue is known. The agent passed 3 of 3; `planned_off` 2 of 3, losing one run to a
+  search that found no source file. This is the clearest case in the set where the
+  plan cost more than the execution.
+- **The steps are fully known in advance, so write a workflow.** This is the
+  strongest finding of the part. The planner wrote **the identical four-step shape in
+  all 54 runs**: `read_issue`, `search_repo`, `read_file`, `post_comment`. Not a
+  similar shape, the same one, every time, for six different issues. If the plan is
+  known before the issue is read and never varies, the planning call buys nothing
+  that a hard-coded workflow would not, and Assignment 1 already had that workflow.
+  Nine per cent to 21 per cent of every run's prompt tokens went on deciding
+  something that was never in doubt.
+- **The plan would cost more than the work.** 4205 again, and 4202, where the whole
+  task is to notice that a request for a new export format is a `feature` and to name
+  where export formats live. Both are one search and a judgement.
+- **Nothing will ever read the plan.** This one does not apply, and is the reason the
+  rest is worth having: the plan was read, by the validator before every run, by the
+  diff after each, and by the detectors in Part E.
+
+### 3. What did each second pass buy, and what did it cost?
+
+| | `off` | `self` | `external` |
+|---|---|---|---|
+| Passes of 18 | 4 | **2** | **6** |
+| Posted nothing | 3 | **8** | 4 |
+| Drafts changed | | 2 | 1 |
+| of those, fixed / broken | | 0 / **2** | 0 / 0 |
+| Held at the bound | | **3** | 0 |
+| Share of prompt tokens | 0 | 0.084 | **0.004** |
+| Median latency | 7.2 s | 11.5 s | 8.2 s |
+
+**`self` was the worst configuration measured, and it was worse than no second pass
+at all.** It did not merely fail to help: of the drafts it changed, 0 were fixed and
+2 were broken, and it held 3 more at the bound so they were never posted. Slide 36
+warns that a second pass can make a right answer wrong; here it did so on every
+draft it touched.
+
+The mechanism is visible in the trace, on 4205. All three `self` runs drafted
+`label: question` with `file: none`, which is the right answer, and all three ended
+`escalated` with nothing posted. The critic's own reason, recorded in the `critique`
+line, was:
+
+> "A 'question' label must name 'none', but the draft incorrectly identifies the file
+> as 'none'."
+
+It states the rule and then declares the draft wrong for obeying it. On the other two
+runs it rewrote `file: none` into `docs/API.md` and `README.md`, then rejected those
+too. **The same check, written in code as `verify`'s check 4, passed 4205 three
+times out of three.** That is slide 33's question answered as sharply as a measurement
+can answer it: the critic that knows nothing the author did not know invented a
+fault, and the check that knows the repository did not.
+
+**`external` bought 2 passes over `off` and cost almost nothing**, 0.4 per cent of
+prompt tokens against `self`'s 8.4, because its check is code and a passing draft
+costs no model call at all. But the 2 passes sit inside the sweep spread (`off` 0 to
+2, `external` 2 to 2), so this pilot cannot separate them from noise. What it can
+say is that `external` broke nothing and held nothing, while `self` broke everything
+it touched.
+
+**Issue 4206 under each mode.** `off`, `self` and `external` all posted
+`src/export/csv.ts` on all nine runs. The answer is `src/ingest/dedupe.ts`. The
+issue's title and first line blame `csv.ts` by name, the file exists, and every run
+read it, so `external`'s four checks all pass: it parses, the path exists, the run
+saw it, and `bug` with a file agrees. **Verification against the repository and the
+run's own record cannot tell that a file the run really did read is not the guilty
+one.** The agent failed 4206 differently: all three runs searched nine to eleven
+times, hit the turn limit, and posted nothing at all. One configuration is
+confidently wrong, the other is silent, and neither is right.
+
+Slide 41's three gates are tabulated in Part D. Only `external` passes all three.
+
+### 4. Which failure did no detector catch?
+
+Premature stopping, and I saw it in my own runs rather than only in slide 51's.
+
+Take a `planned_off` run on 4203. It posted `file: src/api/uploads.ts`; the answer is
+`src/ingest/parser.ts`. Run the ladder over its plan and its trace:
+
+| Question | Did the detector fire? |
+|---|---|
+| q1 Did any two steps do the same thing? | no, no repeats |
+| q2 Is any step's result never used? | no, every result was used |
+| q3 Did every planned step execute? | no, all four ran and returned |
+
+Every detector is silent. The diff labels all four steps `executed`. The run ended
+`completed`, with a comment posted and every step's `expected_result` satisfied: the
+search returned paths, the read returned a file, the comment was posted. Nothing
+inside the run disagrees with it. The run reports success, and it is wrong, and the
+only thing that says so is `fixtures/answers.yaml`, which no part of the run may read.
+
+That is the shape of the failure across the whole set. Of the 12 issue-configuration
+cells that failed, the great majority failed exactly this way: a complete plan,
+completely executed, every expected result met, and the wrong file named. Three of
+the six issues, 4202, 4204 and 4206, were failed by all four configurations, and no
+detector fired on any of them. The expected-result check catches a step that was
+skipped; it cannot catch a plan that was too short, nor a step that returned
+something true and useless.
 
 ## Part G · Note-taking against compaction
-Your `COMPACT_AT`, and what your progress file holds.
+
+**`COMPACT_AT = 40` tokens**, counted over the history with
+`harness.scripted.estimate_tokens`. A deliberately low test setting, not advice: a
+RepoMind run's history is four or five one-line step results, perhaps seventy
+tokens in all, so any realistic threshold would never be crossed and nothing would
+be measured. At 40 the compaction fires partway through, with two steps still to
+run, which is where it can actually cost the run something.
+
+**What the progress file holds**, at `runs/<run_id>.progress.json`, rewritten after
+every step: an `about` line saying it is a record and not a list of things to do,
+`steps_done` as the ids that have run in order, `paths` as every path a search
+returned or a read read in order, and a `paths_means` line saying what those paths
+are. It never holds a search term, because the terms are taken from the issue's
+text and this file outlives the conversation that may carry it.
+
+### Predictions, written 2026-10-16, before Part G's 12 runs
+
+- **I expect the progress file to buy little or nothing, and I expect that to be
+  the finding.** RepoMind's runs are four or five steps long. The honest first
+  question about context is how long your runs are (slide 30), and these are short
+  enough that compaction has almost nothing to throw away.
+- **I expect `--notes off` to score close to 6 of 6 anyway**, because of a choice
+  made in the compaction itself: `prompts/summarize.md` tells the summariser to
+  keep every file path exactly as it appears, ahead of everything else. A
+  compaction told to preserve the paths does preserve them, so the conversation
+  still holds what the questions ask about. A generic summariser would lose more,
+  and the gap between those two is a note-taking decision made inside the
+  compaction rather than outside it.
+- **I expect `--notes on` to score 6 of 6 on nearly every run**, since the file
+  lists exactly the paths the questions are drawn from.
+- **I expect the errors, where they occur, to be false `yes` answers** on the three
+  filler paths rather than false `no` answers on the paths the run saw. The filler
+  paths are real repository files, and a model asked whether it saw a plausible
+  file is being invited to agree.
+- **I expect 4204 to be the interesting run.** If its searches find nothing, as the
+  handout suggests, the run escalates before it posts, and there may be fewer than
+  three paths to ask about; the six questions then lean on filler paths, and the
+  score becomes mostly a test of whether the model will deny seeing things it never
+  saw.
+- **Cost:** the file costs one write per step, which is free, plus its text on
+  every executor call with `--notes on`. At roughly 60 tokens of JSON across four
+  calls I expect under 300 prompt tokens a run, well under 5 per cent.
 
 | Run | Issue | Progress file shown | Compacted before the questions | Answers right, of 6 |
 |---|---|---|---|---|
