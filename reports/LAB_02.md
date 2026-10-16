@@ -566,13 +566,111 @@ text and this file outlives the conversation that may carry it.
 
 | Run | Issue | Progress file shown | Compacted before the questions | Answers right, of 6 |
 |---|---|---|---|---|
-| | | | | |
+| `notes-4203-s01-3bc9cb` | 4203 | no | yes | 5 |
+| `notes-4203-s02-2c8eaf` | 4203 | no | yes | 5 |
+| `notes-4204-s01-0a911c` | 4204 | no | yes | 6 |
+| `notes-4204-s02-a0beff` | 4204 | no | yes | 6 |
+| `notes-4206-s01-d10632` | 4206 | no | yes | 6 |
+| `notes-4206-s02-147cb3` | 4206 | no | yes | 6 |
+| `notes-4203-s01-a668a9` | 4203 | yes | yes | 6 |
+| `notes-4203-s02-7a315f` | 4203 | yes | yes | 5 |
+| `notes-4204-s01-f929f0` | 4204 | yes | yes | 6 |
+| `notes-4204-s02-5a5b1c` | 4204 | yes | yes | 6 |
+| `notes-4206-s01-9d68b7` | 4206 | yes | yes | 6 |
+| `notes-4206-s02-8cdc69` | 4206 | yes | yes | 6 |
 
-1. **What did the progress file keep that compaction lost,** and what did the file
-   cost in tokens?
-2. **Which context operations did RepoMind need?** Structured note-taking,
-   sub-agent isolation, just-in-time retrieval and compaction, in that order: for
-   each, whether your longest run in Part F needed it, and what it would have cost.
+**Without the file: 34 of 36. With it: 35 of 36.** All 12 runs compacted before they
+were asked.
+
+### 1. What did the progress file keep that compaction lost, and what did it cost?
+
+**It kept nothing, because the compaction lost nothing, and the reason is
+structural rather than lucky.** The compaction folds away everything older than the
+two most recent entries. A RepoMind run's history grows one entry a step, and the
+entry that gets folded away first is always step 1, `read_issue`, which returns no
+paths at all. Every summary written across the 12 runs reads, in full:
+
+> "step 1 called read_issue: done."
+
+The paths arrive at steps 2 and 3, the search and the read, and those were still
+inside the recent window when the questions were asked. So the experiment as built
+cannot show the file helping: compaction never reached the entries that hold the
+paths. That is a finding about the experiment, and I would rather report it than
+quietly describe a 1-in-36 difference as an effect.
+
+**The three wrong answers were not information loss either.** Every one of them was
+the model saying `no` about a path it had seen; not one run claimed to have seen a
+path it had not.
+
+| | Said `yes` about an unseen path | Said `no` about a seen path |
+|---|---|---|
+| `--notes off` | 0 | 2 |
+| `--notes on` | 0 | 1 |
+
+That is my own prompt talking. `prompts/questions.md` ends with "If you are unsure
+whether you saw a path, answer `no`", and the result is three false negatives and no
+false positives. The misses were `src/api/uploads.ts` and `src/db/client.ts` on
+4203, both paths a search returned but no step then read, so they appear in the
+run's record without ever having been looked at. One of those was missed even with
+the file shown, which says the file being present is not the same as the file being
+believed.
+
+**What the file cost.** 92 tokens of JSON at the end of a run, carried on a mean of
+6.5 calls, so roughly **600 prompt tokens a run**. Measured end to end, a run with
+the file took 11,574 tokens against 10,496 without, a difference of 1,078 or about
+10 per cent; most of the gap beyond the 600 is ordinary run-to-run variation, since
+the two sets did not search for the same things. The writes themselves are free.
+
+So on this system the file bought 1 answer in 36 for 600 tokens a run. **I predicted
+it would buy little, and it bought less than that.**
+
+### 2. Which context operations did RepoMind need?
+
+The honest first question about context is how long your runs are (slide 30), so
+here is the answer for the longest run in all 72: `agent-4204-s02-e5a581`, 12 model
+calls and 12 tool calls, 23,250 tokens over the whole run, and a **largest single
+prompt of 4,706 tokens**. That is **3.7 per cent** of this model's 128,000-token
+window. Nothing in Part F came close to filling a context.
+
+In the course's order, note-taking first and compaction last:
+
+- **Structured note-taking** (slide 27). **Not needed, and built anyway.** It costs a
+  write per step, which is free, a read on resume, which never happens because
+  nothing resumes, and the file the model can update inconsistently, which here is
+  the risk that the model reads a labelled record as a list of things to do. It
+  earned 1 answer in 36. It would start to pay the moment a run resumed after a
+  crash, or a person took one over, because it is the only part of a run's state that
+  outlives the conversation.
+- **Sub-agent isolation** (slide 28). **Not needed.** The longest run holds twelve
+  tool results in under 5,000 tokens, so there is no context to protect by splitting
+  it. The cost would be real: whatever a sub-agent learned and did not put in its
+  summary. The one place it would help is nothing to do with context, it is 4203,
+  where a search returns a translation file and the useful move is to pivot to the
+  key inside it; a sub-agent given "find the code behind this message" could iterate
+  on that without its searching filling the parent's history. That is a reasoning
+  benefit, not a context one.
+- **Just-in-time retrieval** (slide 24). **Already how RepoMind works, and that is
+  why nothing fills up.** `search_repo` returns `path:line:` pointers, and the run
+  fetches a file's contents only when `read_file` asks for one. The 20-hit cap is
+  what keeps the largest prompt at 4,706 tokens. The cost is the extra fetch, and in
+  4203 that cost is visible: the search returned `src/i18n/en.json`, the run never
+  read it, and the key inside it that would have led to the parser was never fetched.
+- **Compaction** (slide 25). **Not needed, and it is the one that throws information
+  away** (slide 26). At a realistic threshold it would never fire on a run of this
+  length; at `COMPACT_AT = 40` it fires and summarises the one entry that carries no
+  paths. It costs a model call each time, and whatever the summary drops. The reason
+  it dropped nothing here is that `prompts/summarize.md` orders the summariser to
+  preserve every path ahead of everything else, which is note-taking performed inside
+  the compaction. A generic "summarize the older turns" would have lost more, and a
+  fair reading is that the lesson of slide 30 applies to the summariser's instructions
+  and not only to the choice of operation.
+
+**So RepoMind needed none of the four.** It already does just-in-time retrieval by
+accident of its tools, and at 3.7 per cent of a context window the other three are
+answers to a problem it does not have. Building the progress file and the compaction
+was worth doing to find that out, and the thing they measured was not context
+pressure but something else: whether a model will say plainly what its own run did.
+It answered 69 of 72 questions correctly, and was wrong only by being too modest.
 
 ## Assistance
-Which AI tool, what it wrote, and what you checked.
+I used Gemini to better understand the assignment specifications and the starter repository. I took Claude's assistance in drafting the skeletons for the prompts and the report. I also used GitHub Copilot for autocompletion and linting while coding. Whenever I took AI assistance, I made sure to check it manually as well to ensure that there are no errors.

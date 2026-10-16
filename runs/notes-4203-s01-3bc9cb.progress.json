@@ -1,0 +1,18 @@
+{
+ "about": "A record of what this run has already done. Not a list of things to do.",
+ "steps_done": [
+  1,
+  2,
+  3,
+  4
+ ],
+ "paths": [
+  "src/i18n/en.json",
+  "docs/API.md",
+  "src/api/uploads.ts",
+  "src/db/client.ts",
+  "src/db/repos/reportRepo.ts",
+  "src/db/repos/userRepo.ts"
+ ],
+ "paths_means": "every file path a search returned or a read read, oldest first"
+}

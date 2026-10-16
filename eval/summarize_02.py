@@ -246,6 +246,58 @@ def results() -> dict | None:
     return out
 
 
+NOTES_ISSUES = (4203, 4204, 4206)
+
+
+def context() -> list[dict] | None:
+    """Part G: one entry per notes run on the evaluation issues, and no other.
+
+    Every field is read back off the trace. A path counts as seen when a tool_call
+    line above the question has it in its paths, which is what the run actually did,
+    never what the model answered.
+    """
+    from harness.trace import read_trace
+
+    out = []
+    for path in sorted((ROOT / "runs").glob("notes-*.jsonl")):
+        records = read_trace(path)
+        if not records or records[0].get("type") != "run_start":
+            continue
+        start = records[0]
+        if int(start.get("issue") or 0) not in NOTES_ISSUES:
+            continue                      # a notes run on a development issue is development
+        if not any(r.get("type") == "run_end" for r in records):
+            continue
+        ends = [r for r in records if r.get("type") == "end"]
+        if ends and ends[-1].get("terminal_reason") in UNFINISHED:
+            continue
+
+        seen: list[str] = []
+        compacted, asked, questions = False, False, []
+        for line in records:
+            kind = line.get("type")
+            if kind == "tool_call":
+                seen += [p for p in line.get("paths") or [] if p not in seen]
+            elif kind == "compaction" and not asked:
+                compacted = True
+            elif kind == "question":
+                asked = True
+                questions.append({
+                    "path": line.get("path"),
+                    "truth": "yes" if line.get("path") in seen else "no",
+                    "answer": line.get("answer"),
+                })
+        out.append({
+            "run_id": start["run_id"],
+            "issue": int(start["issue"]),
+            "notes_shown": start.get("notes") == "on",
+            "compacted": compacted,
+            "questions": questions,
+            "right": sum(1 for q in questions if q["answer"] == q["truth"]),
+        })
+    return out
+
+
 def main() -> None:
     report = json.loads(REPORT.read_text(encoding="utf-8"))
     wrote, skipped = [], []
@@ -280,6 +332,13 @@ def main() -> None:
                 report["results"][config] = entry
         done = [c for c, e in table.items() if e]
         wrote.append(f"results ({', '.join(done) if done else 'no finished runs yet'})")
+
+    entries = context()
+    if entries is None:
+        skipped.append("context")
+    else:
+        report["context"] = entries
+        wrote.append(f"context ({len(entries)} notes runs)")
 
     REPORT.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 

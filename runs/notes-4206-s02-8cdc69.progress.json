@@ -1,0 +1,20 @@
+{
+ "about": "A record of what this run has already done. Not a list of things to do.",
+ "steps_done": [
+  1,
+  2,
+  3,
+  4
+ ],
+ "paths": [
+  "CHANGELOG.md",
+  "docs/API.md",
+  "docs/ARCHITECTURE.md",
+  "package.json",
+  "README.md",
+  "src/api/reports.ts",
+  "src/api/uploads.ts",
+  "src/export/csv.ts"
+ ],
+ "paths_means": "every file path a search returned or a read read, oldest first"
+}

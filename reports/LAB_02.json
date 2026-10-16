@@ -224,5 +224,474 @@
       "drafts_held": 0
     }
   },
-  "context": []
+  "context": [
+    {
+      "run_id": "notes-4203-s01-3bc9cb",
+      "issue": 4203,
+      "notes_shown": false,
+      "compacted": true,
+      "questions": [
+        {
+          "path": "src/i18n/en.json",
+          "truth": "yes",
+          "answer": "yes"
+        },
+        {
+          "path": "docs/API.md",
+          "truth": "yes",
+          "answer": "yes"
+        },
+        {
+          "path": "src/api/uploads.ts",
+          "truth": "yes",
+          "answer": "no"
+        },
+        {
+          "path": ".eslintrc.json",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "docs/ARCHITECTURE.md",
+          "truth": "no",
+          "answer": "no"
+        }
+      ],
+      "right": 5
+    },
+    {
+      "run_id": "notes-4203-s01-a668a9",
+      "issue": 4203,
+      "notes_shown": true,
+      "compacted": true,
+      "questions": [
+        {
+          "path": "src/i18n/en.json",
+          "truth": "yes",
+          "answer": "yes"
+        },
+        {
+          "path": "docs/API.md",
+          "truth": "yes",
+          "answer": "yes"
+        },
+        {
+          "path": "src/api/uploads.ts",
+          "truth": "yes",
+          "answer": "yes"
+        },
+        {
+          "path": ".eslintrc.json",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "docs/ARCHITECTURE.md",
+          "truth": "no",
+          "answer": "no"
+        }
+      ],
+      "right": 6
+    },
+    {
+      "run_id": "notes-4203-s02-2c8eaf",
+      "issue": 4203,
+      "notes_shown": false,
+      "compacted": true,
+      "questions": [
+        {
+          "path": "docs/API.md",
+          "truth": "yes",
+          "answer": "yes"
+        },
+        {
+          "path": "src/api/uploads.ts",
+          "truth": "yes",
+          "answer": "yes"
+        },
+        {
+          "path": "src/db/client.ts",
+          "truth": "yes",
+          "answer": "no"
+        },
+        {
+          "path": ".eslintrc.json",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "docs/ARCHITECTURE.md",
+          "truth": "no",
+          "answer": "no"
+        }
+      ],
+      "right": 5
+    },
+    {
+      "run_id": "notes-4203-s02-7a315f",
+      "issue": 4203,
+      "notes_shown": true,
+      "compacted": true,
+      "questions": [
+        {
+          "path": "docs/API.md",
+          "truth": "yes",
+          "answer": "yes"
+        },
+        {
+          "path": "src/api/uploads.ts",
+          "truth": "yes",
+          "answer": "yes"
+        },
+        {
+          "path": "src/db/client.ts",
+          "truth": "yes",
+          "answer": "no"
+        },
+        {
+          "path": ".eslintrc.json",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "docs/ARCHITECTURE.md",
+          "truth": "no",
+          "answer": "no"
+        }
+      ],
+      "right": 5
+    },
+    {
+      "run_id": "notes-4204-s01-0a911c",
+      "issue": 4204,
+      "notes_shown": false,
+      "compacted": true,
+      "questions": [
+        {
+          "path": "src/i18n/en.json",
+          "truth": "yes",
+          "answer": "yes"
+        },
+        {
+          "path": ".eslintrc.json",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "docs/API.md",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "docs/ARCHITECTURE.md",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "docs/CONFIG.md",
+          "truth": "no",
+          "answer": "no"
+        }
+      ],
+      "right": 6
+    },
+    {
+      "run_id": "notes-4204-s01-f929f0",
+      "issue": 4204,
+      "notes_shown": true,
+      "compacted": true,
+      "questions": [
+        {
+          "path": "src/i18n/en.json",
+          "truth": "yes",
+          "answer": "yes"
+        },
+        {
+          "path": ".eslintrc.json",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "docs/API.md",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "docs/ARCHITECTURE.md",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "docs/CONFIG.md",
+          "truth": "no",
+          "answer": "no"
+        }
+      ],
+      "right": 6
+    },
+    {
+      "run_id": "notes-4204-s02-5a5b1c",
+      "issue": 4204,
+      "notes_shown": true,
+      "compacted": true,
+      "questions": [
+        {
+          "path": "src/i18n/en.json",
+          "truth": "yes",
+          "answer": "yes"
+        },
+        {
+          "path": ".eslintrc.json",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "docs/API.md",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "docs/ARCHITECTURE.md",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "docs/CONFIG.md",
+          "truth": "no",
+          "answer": "no"
+        }
+      ],
+      "right": 6
+    },
+    {
+      "run_id": "notes-4204-s02-a0beff",
+      "issue": 4204,
+      "notes_shown": false,
+      "compacted": true,
+      "questions": [
+        {
+          "path": ".eslintrc.json",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "docs/API.md",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "docs/ARCHITECTURE.md",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "docs/CONFIG.md",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "docs/triage-runbook.md",
+          "truth": "no",
+          "answer": "no"
+        }
+      ],
+      "right": 6
+    },
+    {
+      "run_id": "notes-4206-s01-9d68b7",
+      "issue": 4206,
+      "notes_shown": true,
+      "compacted": true,
+      "questions": [
+        {
+          "path": "CHANGELOG.md",
+          "truth": "yes",
+          "answer": "yes"
+        },
+        {
+          "path": "docs/API.md",
+          "truth": "yes",
+          "answer": "yes"
+        },
+        {
+          "path": "docs/ARCHITECTURE.md",
+          "truth": "yes",
+          "answer": "yes"
+        },
+        {
+          "path": ".eslintrc.json",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "docs/CONFIG.md",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "docs/triage-runbook.md",
+          "truth": "no",
+          "answer": "no"
+        }
+      ],
+      "right": 6
+    },
+    {
+      "run_id": "notes-4206-s01-d10632",
+      "issue": 4206,
+      "notes_shown": false,
+      "compacted": true,
+      "questions": [
+        {
+          "path": "CHANGELOG.md",
+          "truth": "yes",
+          "answer": "yes"
+        },
+        {
+          "path": "docs/API.md",
+          "truth": "yes",
+          "answer": "yes"
+        },
+        {
+          "path": "docs/ARCHITECTURE.md",
+          "truth": "yes",
+          "answer": "yes"
+        },
+        {
+          "path": ".eslintrc.json",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "docs/CONFIG.md",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "docs/triage-runbook.md",
+          "truth": "no",
+          "answer": "no"
+        }
+      ],
+      "right": 6
+    },
+    {
+      "run_id": "notes-4206-s02-147cb3",
+      "issue": 4206,
+      "notes_shown": false,
+      "compacted": true,
+      "questions": [
+        {
+          "path": "CHANGELOG.md",
+          "truth": "yes",
+          "answer": "yes"
+        },
+        {
+          "path": "docs/API.md",
+          "truth": "yes",
+          "answer": "yes"
+        },
+        {
+          "path": "docs/ARCHITECTURE.md",
+          "truth": "yes",
+          "answer": "yes"
+        },
+        {
+          "path": ".eslintrc.json",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "docs/CONFIG.md",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "docs/triage-runbook.md",
+          "truth": "no",
+          "answer": "no"
+        }
+      ],
+      "right": 6
+    },
+    {
+      "run_id": "notes-4206-s02-8cdc69",
+      "issue": 4206,
+      "notes_shown": true,
+      "compacted": true,
+      "questions": [
+        {
+          "path": "CHANGELOG.md",
+          "truth": "yes",
+          "answer": "yes"
+        },
+        {
+          "path": "docs/API.md",
+          "truth": "yes",
+          "answer": "yes"
+        },
+        {
+          "path": "docs/ARCHITECTURE.md",
+          "truth": "yes",
+          "answer": "yes"
+        },
+        {
+          "path": ".eslintrc.json",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "docs/CONFIG.md",
+          "truth": "no",
+          "answer": "no"
+        },
+        {
+          "path": "docs/triage-runbook.md",
+          "truth": "no",
+          "answer": "no"
+        }
+      ],
+      "right": 6
+    }
+  ]
 }
